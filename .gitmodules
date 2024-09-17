@@ -1,0 +1,3 @@
+[submodule "components/lmic-esp-idf"]
+	path = components/lmic-esp-idf
+	url = https://github.com/Ortes/lmic-esp-idf.git
