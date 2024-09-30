@@ -17,6 +17,8 @@
 #include "esp_lvgl_port.h"
 #include "lmic.h"
 
+#include "screen_api.h"
+
 #if CONFIG_EXAMPLE_LCD_CONTROLLER_SH1107
 #include "esp_lcd_sh1107.h"
 #else
@@ -77,10 +79,11 @@ void os_getDevEui (u1_t* buf) { memcpy(buf, DEVEUI, 8);}
 static const u1_t APPKEY[16] = { 0xB2, 0x70, 0x1C, 0x80, 0x4A, 0x94, 0x65, 0x3C, 0x0B, 0xA0, 0xE4, 0xAA, 0xA0, 0x58, 0xB0, 0x1D };
 void os_getDevKey (u1_t* buf) { memcpy(buf, APPKEY, 16);}
 
-const unsigned TX_INTERVAL = 60;
+
+// handle of send task
+static TaskHandle_t send_task_handle = NULL;
 
 void onEvent (ev_t ev) {
-    ESP_LOGI(TAG, "%lld: ", 1ll);
     switch(ev) {
         case EV_SCAN_TIMEOUT:
             ESP_LOGI(TAG, "EV_SCAN_TIMEOUT");
@@ -96,9 +99,12 @@ void onEvent (ev_t ev) {
             break;
         case EV_JOINING:
             ESP_LOGI(TAG, "EV_JOINING");
+            screen_add_event("EV_JOINING");
             break;
         case EV_JOINED:
             ESP_LOGI(TAG, "EV_JOINED");
+            screen_add_event("EV_JOINED");
+            xTaskNotifyGive(send_task_handle);
             {
                 ESP_LOGI(TAG, "netid: %ld", LMIC.netid);
                 ESP_LOGI(TAG, "devaddr: %lx", LMIC.devaddr);
@@ -128,6 +134,7 @@ void onEvent (ev_t ev) {
             break;
         case EV_JOIN_FAILED:
             ESP_LOGI(TAG, "EV_JOIN_FAILED");
+            screen_add_event("EV_JOIN_FAILED");
             break;
         case EV_REJOIN_FAILED:
             ESP_LOGI(TAG, "EV_REJOIN_FAILED");
@@ -148,6 +155,9 @@ void onEvent (ev_t ev) {
             break;
         case EV_RXCOMPLETE:
             ESP_LOGI(TAG, "EV_RXCOMPLETE");
+            screen_add_event("EV_RXCOMPLETE");
+            LMIC.frame[LMIC.dataLen] = 0;
+            ESP_LOGI(TAG, "Received %d bytes of payload string: %s", LMIC.dataLen, LMIC.frame);
             break;
         case EV_LINK_DEAD:
             ESP_LOGI(TAG, "EV_LINK_DEAD");
@@ -161,6 +171,21 @@ void onEvent (ev_t ev) {
             break;
     }
 }
+
+// task send data every 20 seconds but wait to be joined
+void send_task(void *pvParameter)
+{
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    ESP_LOGI(TAG, "Send task started");
+    const char mydata[] = "H, W!";
+    while (1) {
+        vTaskDelay(20000 / portTICK_PERIOD_MS);
+        if (LMIC.devaddr != 0) {
+            LMIC_setTxData2(1, mydata, sizeof(mydata), 0);
+        }
+    }
+}
+
 
 void app_main(void)
 {
@@ -245,7 +270,7 @@ void app_main(void)
     lv_disp_set_rotation(disp, LV_DISP_ROT_NONE);
 
     ESP_LOGI(TAG, "Display LVGL Scroll Text");
-    example_lvgl_demo_ui(disp);
+    screen_initial_setup(disp);
 
     os_init();
     ESP_LOGI(TAG, "LMIC initialized");
@@ -253,4 +278,6 @@ void app_main(void)
     ESP_LOGI(TAG, "LMIC reset");
     LMIC_startJoining();
     ESP_LOGI(TAG, "LMIC start joining");
+
+    xTaskCreate(send_task, "send_task", 2048, NULL, 1, &send_task_handle);
 }
