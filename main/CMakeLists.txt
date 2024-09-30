@@ -1,4 +1,4 @@
 idf_component_register(
-    SRCS "src/i2c_oled_example_main.c" "src/screen_api.c" "src/screen_api.h"
+    SRCS "src/main.c"
     REQUIRES lmic-esp-idf
     INCLUDE_DIRS ".")
